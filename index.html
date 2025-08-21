@@ -199,14 +199,17 @@
                 }
                 
                 // Initial setup on page load
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        // User is signed in, Firebase is ready
-                        // The UI is ready for team selection
-                    } else {
-                        // User is signed out, handle as needed
-                    }
-                });
+                // This listener ensures Firebase is ready before we start interacting with it
+                if (typeof onAuthStateChanged !== 'undefined') {
+                    onAuthStateChanged(auth, (user) => {
+                        if (user) {
+                            // User is signed in, Firebase is ready
+                            // The UI is ready for team selection
+                        } else {
+                            // User is signed out, handle as needed
+                        }
+                    });
+                }
 
                 console.log("Firebase initialized and authenticated.");
                 
