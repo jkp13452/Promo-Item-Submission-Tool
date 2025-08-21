@@ -100,10 +100,10 @@
                 
                 <h2 class="text-2xl font-semibold text-gray-800 mb-4">Add a New Item</h2>
                 <form id="submissionForm" class="space-y-4">
-                    <!-- Item Image URL Input -->
+                    <!-- Item Image File Input -->
                     <div>
-                        <label for="itemImage" class="block text-sm font-medium text-gray-700 mb-1">Item Image URL</label>
-                        <input type="url" id="itemImage" name="itemImage" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200" placeholder="https://example.com/item.png" required>
+                        <label for="itemImageFile" class="block text-sm font-medium text-gray-700 mb-1">Upload Item Image</label>
+                        <input type="file" id="itemImageFile" name="itemImageFile" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200" accept="image/*" required>
                     </div>
                     <!-- Item Link Input -->
                     <div>
@@ -146,7 +146,7 @@
                     <h2 class="text-2xl font-semibold text-gray-800 mb-4">Submitted Items</h2>
                     <div id="itemList" class="space-y-4">
                         <!-- Items will be dynamically added here -->
-                        <p class="text-gray-500 text-center" id="noItemsMessage">Enter a team name and click "Load Team" to get started.</p>
+                        <p class="text-gray-500 text-center" id="noItemsMessage">Select a team to get started.</p>
                     </div>
                 </div>
             </div>
@@ -157,13 +157,14 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // Global variables for Firebase
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        let db, auth;
+        let db, auth, storage;
         let unsubscribe = null; // To store the onSnapshot listener
 
         // Get references to DOM elements
@@ -176,6 +177,7 @@
         const teamSelect = document.getElementById('teamSelect');
         const currentTeamDisplay = document.getElementById('currentTeamDisplay');
         const submitButton = document.getElementById('submitButton');
+        const itemImageFile = document.getElementById('itemImageFile');
 
         let currentTeamId = null;
 
@@ -187,6 +189,7 @@
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                storage = getStorage(app);
                 
                 // Sign in with custom token if available, otherwise anonymously
                 if (initialAuthToken) {
@@ -351,34 +354,50 @@
 
             hideMessageBox();
 
-            const itemImage = document.getElementById('itemImage').value.trim();
             const itemLink = document.getElementById('itemLink').value.trim();
             const itemCost = parseFloat(document.getElementById('itemCost').value);
             const itemQuantity = parseInt(document.getElementById('itemQuantity').value);
+            const imageFile = itemImageFile.files[0];
 
-            if (!itemImage || !itemLink || isNaN(itemCost) || isNaN(itemQuantity) || itemCost < 0 || itemQuantity < 1) {
-                showMessageBox('Please fill out all fields with valid information.');
+            if (!imageFile || !itemLink || isNaN(itemCost) || isNaN(itemQuantity) || itemCost < 0 || itemQuantity < 1) {
+                showMessageBox('Please fill out all fields and upload an image.');
                 return;
             }
 
-            const newItem = {
-                teamId: currentTeamId,
-                image: itemImage,
-                link: itemLink,
-                cost: itemCost,
-                quantity: itemQuantity,
-                total: itemCost * itemQuantity,
-                timestamp: Date.now() // Add a timestamp for sorting
-            };
+            submitButton.disabled = true;
+            showMessageBox('Uploading image, please wait...', 'success');
 
             try {
+                // Create a unique file name
+                const fileName = `${currentTeamId}_${Date.now()}_${imageFile.name}`;
+                const storageRef = ref(storage, `artifacts/${appId}/public/data/images/${fileName}`);
+
+                // Upload the file
+                const snapshot = await uploadBytes(storageRef, imageFile);
+                const imageUrl = await getDownloadURL(snapshot.ref);
+
+                // Create the new item object with the image URL
+                const newItem = {
+                    teamId: currentTeamId,
+                    image: imageUrl,
+                    link: itemLink,
+                    cost: itemCost,
+                    quantity: itemQuantity,
+                    total: itemCost * itemQuantity,
+                    timestamp: Date.now()
+                };
+
+                // Add the new item to Firestore
                 const teamPromotionsRef = collection(db, `artifacts/${appId}/public/data/promotions`);
                 await addDoc(teamPromotionsRef, newItem);
+
                 showMessageBox('Item submitted successfully!', 'success');
                 form.reset();
             } catch (e) {
-                console.error("Error adding document: ", e);
+                console.error("Error submitting item: ", e);
                 showMessageBox("Error submitting item. Please try again.");
+            } finally {
+                submitButton.disabled = false;
             }
         });
 
